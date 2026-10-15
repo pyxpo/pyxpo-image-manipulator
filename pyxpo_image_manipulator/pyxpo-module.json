@@ -1,4 +1,6 @@
 {
+  "schemaVersion": 1,
+  "nativeContract": 1,
   "name": "image-manipulator",
   "native": "ImageManipulator",
   "ios": { "classes": ["ImageManipulatorModule"] },
