@@ -1,21 +1,40 @@
-"""On-device image processing: info, crop/resize/convert/strip, and "make it under N bytes".
+"""On-device image manipulation, shaped like `expo-image-manipulator`.
+
+    from pyxpo_image_manipulator import ImageManipulator, SaveFormat, FlipType
+    out = await ImageManipulator.manipulateAsync(uri, [{"resize": {"width": 800}}, {"rotate": 90}],
+                                                 {"compress": 0.8, "format": SaveFormat.JPEG})
 
 Native side exposes four primitives (`info`, `open`, `render`, `close`) on a background queue; everything else,
-including the size search, is plain Python so both platforms share it.
+including the size search, is plain Python so both platforms share it. Output never carries EXIF/GPS.
+Options that cannot work on the running platform raise `NotSupportedError` before any native call.
 """
 from __future__ import annotations
 
 import math
 import os
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
-from pyxpo.module_api import call as _call, require_linked, snake_aliases
+import base64
+
+from pyxpo.module_api import NotSupportedError, call as _call, require_linked, require_supported, snake_aliases
 
 __version__ = "0.1.0"
 
 Info = Dict[str, Any]
 Crop = Union[None, str, Dict[str, float]]
 _MAX_EDGE = 4096  # decode cap for size search (memory safety)
+
+
+class SaveFormat:
+    JPEG = "jpeg"
+    PNG = "png"
+    WEBP = "webp"
+    HEIC = "heic"  # iOS only, not in Expo
+
+
+class FlipType:
+    Vertical = "vertical"
+    Horizontal = "horizontal"
 
 
 class ImageTooLargeError(RuntimeError):
@@ -107,41 +126,88 @@ def _discard(info: Info) -> None:
         pass
 
 
+def _plan(w: int, h: int, actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int, int]:
+    """Turns Expo-style actions into native ops, tracking the image size so one-sided resizes keep the aspect."""
+    ops: List[Dict[str, Any]] = []
+    for a in actions:
+        if not isinstance(a, dict) or len(a) != 1:
+            raise ValueError("each action is a dict with one key: resize, rotate, flip or crop (got %r)" % (a,))
+        (kind, arg), = a.items()
+        if kind == "resize":
+            rw, rh = arg.get("width"), arg.get("height")
+            if not rw and not rh:
+                raise ValueError("resize needs width and/or height")
+            w, h = fit_size(w, h, dict(arg, mode="exact" if rw and rh else "fit"))
+            ops.append({"op": "resize", "width": w, "height": h})
+        elif kind == "rotate":
+            deg = float(arg)
+            if deg % 90:
+                raise NotSupportedError("rotate supports multiples of 90 degrees only")
+            deg = int(deg) % 360
+            if deg:
+                ops.append({"op": "rotate", "degrees": deg})
+                if deg in (90, 270):
+                    w, h = h, w
+        elif kind == "flip":
+            if arg not in (FlipType.Vertical, FlipType.Horizontal):
+                raise ValueError("flip must be FlipType.Vertical or FlipType.Horizontal")
+            ops.append({"op": "flip", "axis": arg})
+        elif kind == "crop":
+            x, y, cw, ch = (int(round(arg[k])) for k in ("originX", "originY", "width", "height"))
+            if x < 0 or y < 0 or cw < 1 or ch < 1 or x + cw > w or y + ch > h:
+                raise ValueError("crop %dx%d at (%d,%d) is outside the %dx%d image" % (cw, ch, x, y, w, h))
+            ops.append({"op": "crop", "x": x, "y": y, "width": cw, "height": ch})
+            w, h = cw, ch
+        else:
+            raise ValueError("unknown action %r (use resize, rotate, flip or crop)" % kind)
+    return ops, w, h
+
+
 @snake_aliases
 class ImageManipulator:
     @staticmethod
-    async def getInfo(uri: str) -> Info:
+    async def getInfoAsync(uri: str) -> Info:
         """`{uri, width, height, fileSize, format, mimeType, hasExif, hasGps}` (width/height after EXIF orientation)."""
         return await call("info", str(uri))
 
     @staticmethod
-    async def process(uri: str, crop: Crop = None, resize: Optional[Dict[str, Any]] = None, format: str = "same",
-                      quality: float = 0.9, maxEdge: Optional[int] = None) -> Info:
-        """Orientation baked in, then crop, resize, encode. The output never carries EXIF/GPS.
-        `format`: "same" | "jpeg" | "png" | "heic" (heic encode is iOS only)."""
-        h = await call("open", str(uri), int(maxEdge or 0))
+    async def manipulateAsync(uri: str, actions: Optional[List[Dict[str, Any]]] = None,
+                              saveOptions: Optional[Dict[str, Any]] = None) -> Info:
+        """Applies `actions` in order, then encodes. Returns `{uri, width, height, fileSize, format, mimeType}`
+        (plus `base64` when `saveOptions["base64"]`).
+        Actions: `{"resize": {width, height}}`, `{"rotate": degrees}` (multiples of 90), `{"flip": FlipType.*}`,
+        `{"crop": {originX, originY, width, height}}`. saveOptions: `compress` 0-1 (default 1), `format`
+        (default JPEG; WEBP is Android only, HEIC is iOS only), `base64`."""
+        opts = saveOptions or {}
+        fmt = opts.get("format", SaveFormat.JPEG)
+        if fmt not in (SaveFormat.JPEG, SaveFormat.PNG, SaveFormat.WEBP, SaveFormat.HEIC):
+            raise ValueError("bad format %r" % (fmt,))
+        if fmt == SaveFormat.WEBP:
+            require_supported("WEBP output", ios=False)
+        if fmt == SaveFormat.HEIC:
+            require_supported("HEIC output", android=False)
+        compress = float(opts.get("compress", 1))
+        if not 0 <= compress <= 1:
+            raise ValueError("compress must be between 0 and 1")
+        h = await call("open", str(uri), 0)
         try:
-            w, ht = h["width"], h["height"]
-            spec: Dict[str, Any] = {"format": format, "quality": float(quality)}
-            if isinstance(crop, str):
-                spec["crop"] = centered_crop(w, ht, parse_ratio(crop))
-            elif crop:
-                k = w / float(h.get("sourceWidth") or w)
-                spec["crop"] = {n: int(round(crop[n] * k)) for n in ("x", "y", "width", "height")}
-            if spec.get("crop"):
-                w, ht = spec["crop"]["width"], spec["crop"]["height"]
-            if resize:
-                spec["width"], spec["height"] = fit_size(w, ht, resize)
-            return await call("render", h["h"], spec)
+            ops, _w, _h = _plan(h["width"], h["height"], list(actions or []))
+            out = await call("render", h["h"], {"ops": ops, "format": fmt, "quality": compress})
         finally:
             await call("close", h["h"])
+        if opts.get("base64"):
+            with open(out["uri"], "rb") as f:
+                out["base64"] = base64.b64encode(f.read()).decode("ascii")
+        return out
 
     @staticmethod
-    async def compressToSize(uri: str, maxBytes: int, format: str = "jpeg", minEdge: int = 320) -> Info:
+    async def compressToSizeAsync(uri: str, maxBytes: int, format: str = SaveFormat.JPEG, minEdge: int = 320) -> Info:
         """Re-encodes `uri` to at most `maxBytes`. Result has `quality` and `scale` when the search ran.
         Raises ImageTooLargeError when the target needs fewer than `minEdge` pixels on the long side."""
         if maxBytes <= 0:
             raise ValueError("maxBytes must be positive")
+        if format == SaveFormat.WEBP:
+            require_supported("WEBP output", ios=False)
         h = await call("open", str(uri), _MAX_EDGE)
         try:
             w, ht = h["width"], h["height"]
@@ -152,11 +218,6 @@ class ImageManipulator:
                     spec["width"], spec["height"] = max(1, int(w * scale)), max(1, int(ht * scale))
                 return await call("render", h["h"], spec)
 
-            return await search_under(render, int(maxBytes), max(w, ht), int(minEdge), lossy=format != "png")
+            return await search_under(render, int(maxBytes), max(w, ht), int(minEdge), lossy=format != SaveFormat.PNG)
         finally:
             await call("close", h["h"])
-
-    @staticmethod
-    async def optimize(uri: str) -> Info:
-        """Quick Optimize: long edge <= 2560 px, JPEG quality 0.8."""
-        return await ImageManipulator.process(uri, format="jpeg", quality=0.8, maxEdge=2560)

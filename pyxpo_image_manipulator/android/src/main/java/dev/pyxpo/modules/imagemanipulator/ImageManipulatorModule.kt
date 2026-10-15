@@ -154,10 +154,41 @@ object ImageManipulator {
         return out
     }
 
+    /** One Expo-style action: crop, resize, rotate (multiples of 90, clockwise) or flip. */
+    private fun apply(img: android.graphics.Bitmap, op: org.json.JSONObject): android.graphics.Bitmap = when (op.optString("op")) {
+        "crop" -> {
+            val x = maxOf(0, op.optInt("x")); val y = maxOf(0, op.optInt("y"))
+            val w = minOf(op.optInt("width"), img.width - x); val h = minOf(op.optInt("height"), img.height - y)
+            if (w <= 0 || h <= 0) throw ImageManipulatorError("crop outside image")
+            android.graphics.Bitmap.createBitmap(img, x, y, w, h)
+        }
+        "resize" -> {
+            val w = op.optInt("width"); val h = op.optInt("height")
+            if (w < 1 || h < 1 || w > 16384 || h > 16384) throw ImageManipulatorError("bad output size ${w}x$h")
+            scaled(img, w, h)
+        }
+        "rotate" -> {
+            val d = ((op.optInt("degrees") % 360) + 360) % 360
+            if (d % 90 != 0) throw ImageManipulatorError("rotate supports multiples of 90 degrees")
+            if (d == 0) img else android.graphics.Bitmap.createBitmap(img, 0, 0, img.width, img.height,
+                android.graphics.Matrix().apply { postRotate(d.toFloat()) }, true)
+        }
+        "flip" -> android.graphics.Bitmap.createBitmap(img, 0, 0, img.width, img.height,
+            android.graphics.Matrix().apply { if (op.optString("axis") == "vertical") postScale(1f, -1f) else postScale(-1f, 1f) }, true)
+        else -> throw ImageManipulatorError("unknown action")
+    }
+
     fun render(cacheDir: java.io.File, h: Int, spec: org.json.JSONObject): Map<String, Any?> {
         val handle = handles[h] ?: throw ImageManipulatorError("image handle closed")
         var img = handle.bitmap
         var owned = false  // true once `img` is our own copy that we must recycle
+        val ops = spec.optJSONArray("ops")
+        if (ops != null) for (i in 0 until ops.length()) {
+            val out = apply(img, ops.getJSONObject(i))
+            if (owned && out !== img) img.recycle()
+            if (out !== img) owned = true
+            img = out
+        }
         val crop = spec.optJSONObject("crop")
         if (crop != null) {
             val x = maxOf(0, crop.optInt("x")); val y = maxOf(0, crop.optInt("y"))
@@ -170,7 +201,8 @@ object ImageManipulator {
         val cf = when (format) {
             "jpeg" -> android.graphics.Bitmap.CompressFormat.JPEG
             "png" -> android.graphics.Bitmap.CompressFormat.PNG
-            "heic" -> throw ImageManipulatorError("HEIC output is not supported on Android")
+            "webp" -> if (android.os.Build.VERSION.SDK_INT >= 30) android.graphics.Bitmap.CompressFormat.WEBP_LOSSY else @Suppress("DEPRECATION") android.graphics.Bitmap.CompressFormat.WEBP
+        "heic" -> throw ImageManipulatorError("HEIC output is not supported on Android")
             else -> throw ImageManipulatorError("unsupported output format $format")
         }
         val tw = if (spec.has("width")) spec.optInt("width") else img.width

@@ -145,6 +145,7 @@ enum ImageManipulator {
     static func render(_ h: Int, _ spec: [String: Any]) throws -> [String: Any] {
         guard let handle = handles[h] else { throw ImageManipulatorError("image handle closed") }
         var img = handle.image
+        for op in (spec["ops"] as? [[String: Any]]) ?? [] { img = try apply(img, op) }
         if let c = spec["crop"] as? [String: Any], let x = int(c["x"]), let y = int(c["y"]), let w = int(c["width"]), let ht = int(c["height"]) {
             let r = CGRect(x: x, y: y, width: w, height: ht).intersection(CGRect(x: 0, y: 0, width: img.width, height: img.height))
             guard !r.isEmpty, let cropped = img.cropping(to: r) else { throw ImageManipulatorError("crop outside image") }
@@ -189,6 +190,54 @@ enum ImageManipulator {
         guard CGImageDestinationFinalize(dest) else { throw ImageManipulatorError("encoding failed") }
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
         return ["uri": url.path, "fileSize": size, "width": img.width, "height": img.height, "format": format, "mimeType": mime(format)]
+    }
+
+    /// One Expo-style action: crop, resize, rotate (multiples of 90, clockwise) or flip.
+    static func apply(_ img: CGImage, _ op: [String: Any]) throws -> CGImage {
+        switch op["op"] as? String {
+        case "crop":
+            guard let x = int(op["x"]), let y = int(op["y"]), let w = int(op["width"]), let h = int(op["height"]) else { throw ImageManipulatorError("crop: bad arguments") }
+            let r = CGRect(x: x, y: y, width: w, height: h).intersection(CGRect(x: 0, y: 0, width: img.width, height: img.height))
+            guard !r.isEmpty, let c = img.cropping(to: r) else { throw ImageManipulatorError("crop outside image") }
+            return c
+        case "resize":
+            guard let w = int(op["width"]), let h = int(op["height"]) else { throw ImageManipulatorError("resize: bad arguments") }
+            return try redraw(img, w, h, scale: true) { _, _, _ in }
+        case "rotate":
+            let d = (((int(op["degrees"]) ?? 0) % 360) + 360) % 360
+            guard d % 90 == 0 else { throw ImageManipulatorError("rotate supports multiples of 90 degrees") }
+            if d == 0 { return img }
+            let swap = d == 90 || d == 270
+            let ow = swap ? img.height : img.width, oh = swap ? img.width : img.height
+            return try redraw(img, ow, oh) { ctx, w, h in
+                ctx.translateBy(x: CGFloat(ow) / 2, y: CGFloat(oh) / 2)
+                ctx.rotate(by: -CGFloat(d) * .pi / 180)
+                ctx.translateBy(x: -CGFloat(w) / 2, y: -CGFloat(h) / 2)
+            }
+        case "flip":
+            let horizontal = (op["axis"] as? String) != "vertical"
+            return try redraw(img, img.width, img.height) { ctx, w, h in
+                if horizontal { ctx.translateBy(x: CGFloat(w), y: 0); ctx.scaleBy(x: -1, y: 1) }
+                else { ctx.translateBy(x: 0, y: CGFloat(h)); ctx.scaleBy(x: 1, y: -1) }
+            }
+        default:
+            throw ImageManipulatorError("unknown action")
+        }
+    }
+
+    /// Draws `img` into a new ow x oh bitmap after `setup` adjusts the context transform; `scale` stretches it to ow x oh.
+    static func redraw(_ img: CGImage, _ ow: Int, _ oh: Int, scale: Bool = false, _ setup: (CGContext, Int, Int) -> Void) throws -> CGImage {
+        if ow < 1 || oh < 1 || ow > 16384 || oh > 16384 { throw ImageManipulatorError("bad output size \(ow)x\(oh)") }
+        guard let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw ImageManipulatorError("out of memory at \(ow)x\(oh)")
+        }
+        ctx.interpolationQuality = .high
+        let w = scale ? ow : img.width, h = scale ? oh : img.height
+        setup(ctx, w, h)
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = ctx.makeImage() else { throw ImageManipulatorError("image operation failed") }
+        return out
     }
 
     static func outputDir() throws -> URL {
