@@ -1,0 +1,11 @@
+{
+  "name": "image-manipulator",
+  "native": "ImageManipulator",
+  "ios": { "classes": ["ImageManipulatorModule"] },
+  "android": {
+    "namespace": "dev.pyxpo.modules.imagemanipulator",
+    "classes": ["dev.pyxpo.modules.imagemanipulator.ImageManipulatorModule"],
+    "dependencies": [],
+    "minSdk": 24
+  }
+}
