@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Software Development :: User Interfaces",
 ]
 requires-python = ">=3.9"
-dependencies = ["pyxpo>=0.1.0"]
+dependencies = ["pyxpo>=0.1.0,<0.2"]
 
 [project.urls]
 Homepage = "https://github.com/ivishalchaubey/pyxpo/tree/main/packages/image-manipulator"
@@ -36,7 +36,7 @@ packages = ["pyxpo_image_manipulator"]
 version = { attr = "pyxpo_image_manipulator.__version__" }
 
 [tool.setuptools.package-data]
-pyxpo_image_manipulator = ["pyxpo-module.json", "ios/**/*", "android/**/*"]
+pyxpo_image_manipulator = ["pyxpo-module.json", "py.typed", "ios/**/*", "android/**/*"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["__pycache__", "*.pyc", ".DS_Store"]
