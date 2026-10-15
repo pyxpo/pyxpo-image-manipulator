@@ -2,7 +2,7 @@
 
 On-device image processing for pyxpo apps: info, crop, resize, convert, strip metadata, compress under a size.
 
-This is an optional [pyxpo](https://github.com/ivishalchaubey/pyxpo) native module. Apps that do not
+This is an optional [pyxpo](https://github.com/pyxpo/pyxpo) native module. Apps that do not
 list it carry none of its code, permissions or dependencies.
 
 ## Install

@@ -18,7 +18,7 @@ import base64
 
 from pyxpo.module_api import NotSupportedError, call as _call, require_linked, require_supported, snake_aliases
 
-__version__ = "0.1.0"
+__version__ = "0.1.0a1"
 
 Info = Dict[str, Any]
 Crop = Union[None, str, Dict[str, float]]
