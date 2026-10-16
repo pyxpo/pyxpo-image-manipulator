@@ -4,6 +4,7 @@
   "name": "image-manipulator",
   "native": "ImageManipulator",
   "ios": { "classes": ["ImageManipulatorModule"] },
+  "web": { "packages": ["pillow"] },
   "android": {
     "namespace": "dev.pyxpo.modules.imagemanipulator",
     "classes": ["dev.pyxpo.modules.imagemanipulator.ImageManipulatorModule"],
