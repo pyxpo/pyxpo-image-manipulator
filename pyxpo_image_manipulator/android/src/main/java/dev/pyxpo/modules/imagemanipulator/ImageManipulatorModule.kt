@@ -114,6 +114,10 @@ object ImageManipulator {
         var sample = 1
         while (longest / (sample * 2) >= cap * 0.9) sample *= 2
         val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        // Pixels in sRGB, whatever the photo's profile (Display P3 on iPhones): the outputs draw everywhere and
+        // their values are what Python reads.
+        if (android.os.Build.VERSION.SDK_INT >= 26)
+            opts.inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
         var bmp = android.graphics.BitmapFactory.decodeFile(path, opts) ?: throw ImageManipulatorError("cannot decode image")
         bmp = applyOrientation(bmp, ori)
         val big = maxOf(bmp.width, bmp.height)
