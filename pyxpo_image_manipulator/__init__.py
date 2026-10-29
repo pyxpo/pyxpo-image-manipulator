@@ -4,7 +4,7 @@
     out = await ImageManipulator.manipulateAsync(uri, [{"resize": {"width": 800}}, {"rotate": 90}],
                                                  {"compress": 0.8, "format": SaveFormat.JPEG})
 
-Native side exposes four primitives (`info`, `open`, `render`, `close`) on a background queue; everything else,
+Native side exposes five primitives (`info`, `metadata`, `open`, `render`, `close`) on a background queue; everything else,
 including the size search, is plain Python so both platforms share it. Output never carries EXIF/GPS.
 Options that cannot work on the running platform raise `NotSupportedError` before any native call.
 """
@@ -163,12 +163,51 @@ def _plan(w: int, h: int, actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str,
     return ops, w, h
 
 
+_TEXT = ("make", "model", "lens", "software", "artist", "copyright", "description")
+_NUMS = ("exposureTime", "fNumber", "focalLength", "latitude", "longitude", "altitude")
+
+
+def tidy_metadata(raw: Dict[str, Any]) -> Info:
+    """Cleans the native `metadata` reply: trims text, drops blanks, `dateTaken` as `YYYY-MM-DD HH:MM:SS`, `iso` as int,
+    and adds `camera` (make + model, without repeating the make)."""
+    out: Info = {}
+    for k in _TEXT:
+        v = raw.get(k)
+        if isinstance(v, str) and v.strip("\x00 \t\r\n"):
+            out[k] = v.strip("\x00 \t\r\n")
+    for k in _NUMS:
+        v = raw.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out[k] = float(v)
+    if not (-90 <= out.get("latitude", 0) <= 90 and -180 <= out.get("longitude", 0) <= 180) or ("latitude" in out) != ("longitude" in out):
+        for k in ("latitude", "longitude", "altitude"):
+            out.pop(k, None)
+    iso = raw.get("iso")
+    if isinstance(iso, (int, float)) and not isinstance(iso, bool) and math.isfinite(iso) and iso > 0:
+        out["iso"] = int(round(iso))
+    taken = raw.get("dateTaken")
+    if isinstance(taken, str) and len(taken.strip()) >= 10 and taken[:4].isdigit():
+        t = taken.strip()
+        out["dateTaken"] = t[:10].replace(":", "-") + t[10:]
+    make, model = out.get("make", ""), out.get("model", "")
+    if make or model:
+        out["camera"] = model if make and model.lower().startswith(make.lower()) else " ".join(x for x in (make, model) if x)
+    return out
+
+
 @snake_aliases
 class ImageManipulator:
     @staticmethod
     async def getInfoAsync(uri: str) -> Info:
         """`{uri, width, height, fileSize, format, mimeType, hasExif, hasGps}` (width/height after EXIF orientation)."""
         return await call("info", str(uri))
+
+    @staticmethod
+    async def getMetadataAsync(uri: str) -> Info:
+        """EXIF/GPS fields the file carries, for showing what a clean copy drops. Keys present only when found:
+        `camera, make, model, lens, software, dateTaken, exposureTime, fNumber, iso, focalLength, artist, copyright,
+        description, latitude, longitude, altitude`. `{}` for a file with none."""
+        return tidy_metadata(await call("metadata", str(uri)) or {})
 
     @staticmethod
     async def manipulateAsync(uri: str, actions: Optional[List[Dict[str, Any]]] = None,

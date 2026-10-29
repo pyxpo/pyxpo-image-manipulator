@@ -24,6 +24,7 @@ out = await ImageManipulator.manipulate_async(
 - **Formats:** JPEG, PNG, WebP (Android) and HEIC (iOS), with a `compress` quality from 0 to 1.
 - **Compress to a size:** `compress_to_size_async(uri, max_bytes)` finds the best quality, then shrinks the image if needed.
 - **Info:** width and height (after EXIF rotation), size, format, and whether EXIF or GPS data exists.
+- **Metadata:** camera, lens, date taken, exposure and GPS location read from the file, to show what a clean copy drops.
 - **Privacy:** results never contain EXIF or GPS.
 - **Base64** output on request.
 - **Everywhere:** Pillow does the work on the web page and the desktop window.
@@ -37,6 +38,7 @@ out = await ImageManipulator.manipulate_async(
 | Cropping, rotating or flipping | [Actions](#actions) |
 | Changing format | [Save options](#save-options) |
 | Reading the size of a file | [Info](#info) |
+| Showing what EXIF a photo carries | [Metadata](#metadata) |
 | Exact signatures | [API reference](#api-reference) · [Errors](#errors) |
 | Seeing it in a real app | [Recipe: upload a photo](#recipe-upload-a-photo) |
 | Stuck | [Testing](#testing) · [Troubleshooting](#troubleshooting) · [FAQ](#faq) |
@@ -111,6 +113,32 @@ info = await ImageManipulator.get_info_async(path)
 ```
 
 `width` and `height` are after EXIF orientation. Use `hasGps` to warn before sharing an original photo.
+
+## Metadata
+
+```python
+meta = await ImageManipulator.get_metadata_async(path)
+# {"camera": "Apple iPhone 15 Pro", "dateTaken": "2024-05-01 10:22:33", "fNumber": 1.8, "iso": 50,
+#  "latitude": 28.61, "longitude": 77.21, ...}
+```
+
+Keys appear only when the file has them, and a file with no metadata gives `{}`. Every result of
+`manipulate_async` is clean, so read the original before you replace it.
+
+| Key | Value |
+| --- | --- |
+| `camera` | `make` and `model` joined, without repeating the make. |
+| `make`, `model`, `lens`, `software` | Text from the camera or editing app. |
+| `artist`, `copyright`, `description` | Text a person or app wrote into the file. |
+| `dateTaken` | `"YYYY-MM-DD HH:MM:SS"`, the camera's local time, with no time zone. |
+| `exposureTime` | Seconds, for example `0.008` for 1/125 s. |
+| `fNumber`, `focalLength` | Aperture, and focal length in millimeters. |
+| `iso` | Integer. |
+| `latitude`, `longitude` | Decimal degrees: south and west are negative. |
+| `altitude` | Meters. Below sea level is negative. |
+
+> **Tip:** Since Android 10, the system removes the location from a picked photo unless the app holds
+> `ACCESS_MEDIA_LOCATION`, so `latitude` is often missing there.
 
 ## Actions
 
@@ -291,6 +319,7 @@ and the image was made smaller.
 | Method (camelCase name) | Returns |
 | --- | --- |
 | `get_info_async(uri)` | `{uri, width, height, fileSize, format, mimeType, hasExif, hasGps}` |
+| `get_metadata_async(uri)` | EXIF/GPS fields the file has: see [Metadata](#metadata). `{}` when none. |
 | `manipulate_async(uri, actions=None, save_options=None)` | `{uri, width, height, fileSize, format, mimeType}` (+ `base64`) |
 | `compress_to_size_async(uri, max_bytes, format="jpeg", min_edge=320)` | The same, plus `quality` and `scale` when a search ran. |
 
@@ -303,6 +332,7 @@ and the image was made smaller.
 | `ImageTooLargeError` | Raised when the size target is out of reach. |
 | `parse_ratio("4:5")`, `centered_crop(w, h, ratio)` | Helpers for ratio crops. |
 | `search_under(render, max_bytes, longest, min_edge)` | The size search, usable with your own `render`. |
+| `tidy_metadata(raw)` | Cleans a raw `metadata` reply. Use it with a fake native side in tests. |
 
 ## License
 

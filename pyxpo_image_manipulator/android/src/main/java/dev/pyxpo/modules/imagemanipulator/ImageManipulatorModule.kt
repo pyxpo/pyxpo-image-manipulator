@@ -17,6 +17,7 @@ class ImageManipulatorModule : PxModule() {
         when (method) {
             "ping" -> background(reply) { "pong" }
             "info" -> background(reply) { ImageManipulator.info(str(args, 0)) }
+            "metadata" -> background(reply) { ImageManipulator.metadata(str(args, 0)) }
             "open" -> background(reply) { ImageManipulator.open(str(args, 0), if (args.length() > 1) args.optInt(1, 0) else 0) }
             "render" -> background(reply) {
                 val spec = args.optJSONObject(1) ?: throw ImageManipulatorError("render: bad arguments")
@@ -99,6 +100,34 @@ object ImageManipulator {
         return mapOf("uri" to path, "width" to if (swap) o.outHeight else o.outWidth, "height" to if (swap) o.outWidth else o.outHeight,
             "fileSize" to java.io.File(path).length(), "format" to format, "mimeType" to mimeOf(format),
             "hasExif" to hasExif, "hasGps" to hasGps)
+    }
+
+    /** Readable EXIF/GPS fields the file carries (raw values; the Python side tidies them). Missing ones are left out. */
+    fun metadata(uri: String): Map<String, Any?> {
+        val path = ImageManipulatorModule.path(uri)
+        bounds(path)
+        val ex = exif(path) ?: return emptyMap()
+        val out = HashMap<String, Any?>()
+        val text = listOf("make" to android.media.ExifInterface.TAG_MAKE, "model" to android.media.ExifInterface.TAG_MODEL,
+            "software" to android.media.ExifInterface.TAG_SOFTWARE, "artist" to android.media.ExifInterface.TAG_ARTIST,
+            "copyright" to android.media.ExifInterface.TAG_COPYRIGHT, "description" to android.media.ExifInterface.TAG_IMAGE_DESCRIPTION,
+            "lens" to android.media.ExifInterface.TAG_LENS_MODEL)
+        for ((k, tag) in text) ex.getAttribute(tag)?.let { out[k] = it }
+        (ex.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL) ?: ex.getAttribute(android.media.ExifInterface.TAG_DATETIME))
+            ?.let { out["dateTaken"] = it }
+        val nums = listOf("exposureTime" to android.media.ExifInterface.TAG_EXPOSURE_TIME, "fNumber" to android.media.ExifInterface.TAG_F_NUMBER,
+            "focalLength" to android.media.ExifInterface.TAG_FOCAL_LENGTH, "iso" to android.media.ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)
+        for ((k, tag) in nums) {
+            if (ex.getAttribute(tag) != null) ex.getAttributeDouble(tag, Double.NaN).takeIf { !it.isNaN() }?.let { out[k] = it }
+        }
+        val ll = FloatArray(2)
+        @Suppress("DEPRECATION")
+        if (ex.getLatLong(ll)) {
+            out["latitude"] = ll[0].toDouble()
+            out["longitude"] = ll[1].toDouble()
+            ex.getAltitude(Double.NaN).takeIf { !it.isNaN() }?.let { out["altitude"] = it }
+        }
+        return out
     }
 
     fun open(uri: String, maxEdge: Int): Map<String, Any?> {

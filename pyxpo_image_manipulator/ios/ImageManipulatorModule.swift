@@ -20,6 +20,8 @@ final class ImageManipulatorModule: PxModule {
             run(reply) { "pong" }
         case "info":
             run(reply) { try ImageManipulator.info(try Self.str(args, 0)) }
+        case "metadata":
+            run(reply) { try ImageManipulator.metadata(try Self.str(args, 0)) }
         case "open":
             run(reply) { try ImageManipulator.open(try Self.str(args, 0), maxEdge: (args.count > 1 ? args[1] as? Int : nil) ?? 0) }
         case "render":
@@ -114,6 +116,36 @@ enum ImageManipulator {
         let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
         return ["uri": p, "width": w, "height": h, "fileSize": size, "format": format, "mimeType": mime(format),
                 "hasExif": (exif?.isEmpty == false) || (tiff?.isEmpty == false), "hasGps": gps?.isEmpty == false]
+    }
+
+    /// Readable EXIF/TIFF/GPS fields the file carries (raw values; the Python side tidies them). Missing ones are left out.
+    static func metadata(_ uri: String) throws -> [String: Any] {
+        let props = CGImageSourceCopyPropertiesAtIndex(try source(uri), 0, nil) as? [CFString: Any] ?? [:]
+        let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+        let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+        let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
+        var out: [String: Any] = [:]
+        let text: [(String, Any?)] = [
+            ("make", tiff[kCGImagePropertyTIFFMake]), ("model", tiff[kCGImagePropertyTIFFModel]),
+            ("software", tiff[kCGImagePropertyTIFFSoftware]), ("artist", tiff[kCGImagePropertyTIFFArtist]),
+            ("copyright", tiff[kCGImagePropertyTIFFCopyright]), ("description", tiff[kCGImagePropertyTIFFImageDescription]),
+            ("lens", exif[kCGImagePropertyExifLensModel]),
+            ("dateTaken", exif[kCGImagePropertyExifDateTimeOriginal] ?? tiff[kCGImagePropertyTIFFDateTime])]
+        for (k, v) in text { if let v = v as? String { out[k] = v } }
+        let nums: [(String, Any?)] = [
+            ("exposureTime", exif[kCGImagePropertyExifExposureTime]), ("fNumber", exif[kCGImagePropertyExifFNumber]),
+            ("focalLength", exif[kCGImagePropertyExifFocalLength]),
+            ("iso", (exif[kCGImagePropertyExifISOSpeedRatings] as? [Any])?.first)]
+        for (k, v) in nums { if let v = (v as? NSNumber)?.doubleValue { out[k] = v } }
+        if let lat = (gps[kCGImagePropertyGPSLatitude] as? NSNumber)?.doubleValue,
+           let lon = (gps[kCGImagePropertyGPSLongitude] as? NSNumber)?.doubleValue {
+            out["latitude"] = (gps[kCGImagePropertyGPSLatitudeRef] as? String) == "S" ? -lat : lat
+            out["longitude"] = (gps[kCGImagePropertyGPSLongitudeRef] as? String) == "W" ? -lon : lon
+            if let alt = (gps[kCGImagePropertyGPSAltitude] as? NSNumber)?.doubleValue {
+                out["altitude"] = (gps[kCGImagePropertyGPSAltitudeRef] as? Int) == 1 ? -alt : alt
+            }
+        }
+        return out
     }
 
     static func open(_ uri: String, maxEdge: Int) throws -> [String: Any] {

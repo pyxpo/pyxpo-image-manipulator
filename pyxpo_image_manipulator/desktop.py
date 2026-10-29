@@ -63,6 +63,56 @@ def info(uri: str) -> Dict[str, Any]:
             "hasGps": 0x8825 in exif}
 
 
+def _ratio(v: Any) -> Any:
+    try:
+        return float(v)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _degrees(dms: Any, ref: Any) -> Any:
+    try:
+        d, m, s = (float(x) for x in dms)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+    v = d + m / 60 + s / 3600
+    return -v if ref in ("S", "W") else v
+
+
+def metadata(uri: str) -> Dict[str, Any]:
+    """Readable EXIF/GPS fields the file carries, same raw shape as the native side. Missing ones are left out."""
+    path = _path(uri)
+    if Image is None:
+        raise RuntimeError("image-manipulator on desktop needs Pillow: pip install Pillow")
+    try:
+        with Image.open(path) as img:
+            exif = img.getexif()
+    except Exception:  # noqa: BLE001  formats Pillow cannot read carry nothing it can show
+        return {}
+    ifd = exif.get_ifd(0x8769)
+    gps = exif.get_ifd(0x8825)
+    out: Dict[str, Any] = {}
+    for key, tag, src in (("make", 0x010F, exif), ("model", 0x0110, exif), ("software", 0x0131, exif), ("artist", 0x013B, exif),
+                          ("copyright", 0x8298, exif), ("description", 0x010E, exif), ("lens", 0xA434, ifd)):
+        if isinstance(src.get(tag), str):
+            out[key] = src[tag]
+    taken = ifd.get(0x9003) or exif.get(0x0132)
+    if isinstance(taken, str):
+        out["dateTaken"] = taken
+    for key, tag in (("exposureTime", 0x829A), ("fNumber", 0x829D), ("focalLength", 0x920A), ("iso", 0x8827)):
+        v = ifd.get(tag)
+        v = _ratio(v[0] if isinstance(v, tuple) and v else v)
+        if v is not None:
+            out[key] = v
+    lat, lon = _degrees(gps.get(2), gps.get(1)), _degrees(gps.get(4), gps.get(3))
+    if lat is not None and lon is not None:
+        out["latitude"], out["longitude"] = lat, lon
+        alt = _ratio(gps.get(6))
+        if alt is not None:
+            out["altitude"] = -alt if gps.get(5) in (1, b"\x01") else alt
+    return out
+
+
 def open_(uri: str, max_edge: int) -> Dict[str, Any]:
     img, fmt = _load(_path(uri))
     img = ImageOps.exif_transpose(img)
@@ -151,7 +201,7 @@ def close(h: int) -> None:
 
 
 def call(method: str, args: List[Any]) -> Any:
-    fn = {"info": info, "open": open_, "render": render, "close": close}.get(method)
+    fn = {"info": info, "metadata": metadata, "open": open_, "render": render, "close": close}.get(method)
     if fn is None:
         raise ValueError("unknown ImageManipulator method %r" % method)
     return fn(*args)

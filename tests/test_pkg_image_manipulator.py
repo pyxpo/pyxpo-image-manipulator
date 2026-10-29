@@ -7,7 +7,7 @@ import pytest
 from pyxpo.apis import _bridge
 from pyxpo.module_api import NotSupportedError
 from pyxpo_image_manipulator import FlipType, ImageManipulator, ImageTooLargeError, SaveFormat
-from pyxpo_image_manipulator import centered_crop, fit_size, parse_ratio, search_under
+from pyxpo_image_manipulator import centered_crop, fit_size, parse_ratio, search_under, tidy_metadata
 
 
 class FakeApp:
@@ -200,3 +200,38 @@ def test_compress_to_size_uses_search_and_closes(tmp_path):
     assert log[0] == ("open", "/a.jpg", 4096) and log[-1] == ("close", 7)
     with pytest.raises(ValueError):
         run(h, lambda: ImageManipulator.compressToSizeAsync("/a.jpg", 0))
+
+
+def test_metadata_is_tidied():
+    raw = {"make": "Apple", "model": "iPhone 15 Pro", "software": "  ", "lens": "back camera\x00", "dateTaken": "2024:05:01 10:22:33",
+           "exposureTime": 1 / 120, "iso": 49.6, "latitude": 28.6, "longitude": 77.2, "altitude": float("nan")}
+    out, app = run({("ImageManipulator", "metadata"): lambda uri: raw}, lambda: ImageManipulator.getMetadataAsync("/a.jpg"))
+    assert app.calls == [("ImageManipulator", "metadata", ("/a.jpg",))]
+    assert out == {"make": "Apple", "model": "iPhone 15 Pro", "camera": "Apple iPhone 15 Pro",
+                   "lens": "back camera", "dateTaken": "2024-05-01 10:22:33", "exposureTime": 1 / 120, "iso": 50,
+                   "latitude": 28.6, "longitude": 77.2}
+
+
+def test_metadata_camera_skips_repeated_make_and_bad_location():
+    out = tidy_metadata({"make": "Google", "model": "Google Pixel 8", "latitude": 120.0, "longitude": 5.0, "altitude": 3.0})
+    assert out == {"make": "Google", "model": "Google Pixel 8", "camera": "Google Pixel 8"}
+    assert tidy_metadata({}) == {}
+    assert tidy_metadata({"latitude": 1.0}) == {}  # half a location is no location
+
+
+def test_desktop_metadata_reads_exif_and_gps(tmp_path):
+    Image = pytest.importorskip("PIL.Image")
+    from pyxpo_image_manipulator import desktop
+    ex = Image.Exif()
+    ex[0x010F], ex[0x0110] = "Apple", "iPhone 15 Pro"
+    ex.get_ifd(0x8769).update({0x9003: "2024:05:01 10:22:33", 0x829D: 1.8, 0x8827: 50})
+    ex.get_ifd(0x8825).update({1: "S", 2: (28.0, 30.0, 0.0), 3: "W", 4: (77.0, 0.0, 0.0), 5: b"\x01", 6: 10.0})
+    p = tmp_path / "a.jpg"
+    Image.new("RGB", (8, 8)).save(p, exif=ex)
+    out = tidy_metadata(desktop.metadata(str(p)))
+    assert out["camera"] == "Apple iPhone 15 Pro" and out["dateTaken"] == "2024-05-01 10:22:33"
+    assert (out["fNumber"], out["iso"]) == (1.8, 50)
+    assert (out["latitude"], out["longitude"], out["altitude"]) == (-28.5, -77.0, -10.0)
+    q = tmp_path / "b.png"
+    Image.new("RGB", (8, 8)).save(q)
+    assert desktop.metadata(str(q)) == {}
