@@ -111,12 +111,12 @@ object ImageManipulator {
         val text = listOf("make" to android.media.ExifInterface.TAG_MAKE, "model" to android.media.ExifInterface.TAG_MODEL,
             "software" to android.media.ExifInterface.TAG_SOFTWARE, "artist" to android.media.ExifInterface.TAG_ARTIST,
             "copyright" to android.media.ExifInterface.TAG_COPYRIGHT, "description" to android.media.ExifInterface.TAG_IMAGE_DESCRIPTION,
-            "lens" to android.media.ExifInterface.TAG_LENS_MODEL)
+            "lens" to "LensModel")  // no platform constant; the tag name works on newer Android
         for ((k, tag) in text) ex.getAttribute(tag)?.let { out[k] = it }
         (ex.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL) ?: ex.getAttribute(android.media.ExifInterface.TAG_DATETIME))
             ?.let { out["dateTaken"] = it }
         val nums = listOf("exposureTime" to android.media.ExifInterface.TAG_EXPOSURE_TIME, "fNumber" to android.media.ExifInterface.TAG_F_NUMBER,
-            "focalLength" to android.media.ExifInterface.TAG_FOCAL_LENGTH, "iso" to android.media.ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)
+            "focalLength" to android.media.ExifInterface.TAG_FOCAL_LENGTH, "iso" to @Suppress("DEPRECATION") android.media.ExifInterface.TAG_ISO_SPEED_RATINGS)
         for ((k, tag) in nums) {
             if (ex.getAttribute(tag) != null) ex.getAttributeDouble(tag, Double.NaN).takeIf { !it.isNaN() }?.let { out[k] = it }
         }
