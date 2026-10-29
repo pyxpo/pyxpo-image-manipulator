@@ -1,5 +1,7 @@
 # pyxpo-image-manipulator
 
+[![CI](https://github.com/pyxpo/pyxpo-image-manipulator/actions/workflows/ci.yml/badge.svg)](https://github.com/pyxpo/pyxpo-image-manipulator/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/pyxpo-image-manipulator)](https://pypi.org/project/pyxpo-image-manipulator/) [![Python](https://img.shields.io/pypi/pyversions/pyxpo-image-manipulator)](https://pypi.org/project/pyxpo-image-manipulator/) [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Resize, crop, rotate, flip, convert and compress images on the device, in [pyxpo](https://github.com/pyxpo/pyxpo) apps
 written in Python. The API follows [expo-image-manipulator](https://docs.expo.dev/versions/latest/sdk/imagemanipulator/),
 plus `compress_to_size_async` to get an image under a byte limit. The work runs natively on a background queue (Core
