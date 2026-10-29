@@ -34,11 +34,11 @@ dependencies = ["pyxpo>=0.1.0a1,<0.2"]
 desktop = ["Pillow>=9"]
 
 [project.urls]
-Homepage = "https://github.com/pyxpo/pyxpo/tree/main/packages/image-manipulator"
-Documentation = "https://github.com/pyxpo/pyxpo/blob/main/packages/image-manipulator/README.md"
-Changelog = "https://github.com/pyxpo/pyxpo/blob/main/packages/image-manipulator/CHANGELOG.md"
-Source = "https://github.com/pyxpo/pyxpo/tree/main/packages/image-manipulator"
-Issues = "https://github.com/pyxpo/pyxpo/issues"
+Homepage = "https://github.com/pyxpo/pyxpo-image-manipulator"
+Documentation = "https://github.com/pyxpo/pyxpo-image-manipulator/blob/main/README.md"
+Changelog = "https://github.com/pyxpo/pyxpo-image-manipulator/blob/main/CHANGELOG.md"
+Source = "https://github.com/pyxpo/pyxpo-image-manipulator"
+Issues = "https://github.com/pyxpo/pyxpo-image-manipulator/issues"
 
 # How `pyxpo build` finds this module: the entry point name is the module name apps list in
 # `[tool.pyxpo] modules`, its value the import package holding pyxpo-module.json.

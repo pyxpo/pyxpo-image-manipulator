@@ -6,7 +6,7 @@ plus `compress_to_size_async` to get an image under a byte limit. The work runs 
 Graphics and ImageIO on iOS, Bitmap APIs on Android). Output files never carry EXIF or GPS data.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pyxpo/pyxpo/main/packages/image-manipulator/docs/images/hero.png" width="820" alt="An image resized, rotated and compressed on Android and iOS, with sizes before and after">
+  <img src="https://raw.githubusercontent.com/pyxpo/pyxpo-image-manipulator/main/docs/images/hero.png" width="820" alt="An image resized, rotated and compressed on Android and iOS, with sizes before and after">
 </p>
 
 ```python
@@ -98,7 +98,7 @@ def Shrink(path: str = ""):
 > `lambda: coroutine()` is never awaited.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pyxpo/pyxpo/main/packages/image-manipulator/docs/images/result.png" width="720" alt="The original photo, then the resized and rotated copy with its new size, on Android and iOS">
+  <img src="https://raw.githubusercontent.com/pyxpo/pyxpo-image-manipulator/main/docs/images/result.png" width="720" alt="The original photo, then the resized and rotated copy with its new size, on Android and iOS">
 </p>
 
 ## Info
