@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0a3 (2026-11-02)
+
+- iOS: declares the required-reason APIs it uses (`ios.privacyManifest` in `pyxpo-module.json`), so pyxpo 0.1.0a23 and later add them to the app's `PrivacyInfo.xcprivacy` for App Store review.
+
 ## 0.1.0a2 (2026-10-30)
 
 - Added `get_metadata_async(uri)` (`getMetadataAsync`). It reads the camera, lens, date taken, exposure and GPS location from a file on iOS, Android, web and desktop.

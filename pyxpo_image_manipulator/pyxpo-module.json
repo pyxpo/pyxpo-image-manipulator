@@ -3,7 +3,12 @@
   "nativeContract": 1,
   "name": "image-manipulator",
   "native": "ImageManipulator",
-  "ios": { "classes": ["ImageManipulatorModule"] },
+  "ios": {
+    "privacyManifest": {"NSPrivacyAccessedAPITypes": [
+      {"NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp", "NSPrivacyAccessedAPITypeReasons": ["C617.1"]}
+    ]},
+    "classes": ["ImageManipulatorModule"]
+  },
   "web": { "packages": ["pillow"] },
   "android": {
     "namespace": "dev.pyxpo.modules.imagemanipulator",
